@@ -40,6 +40,10 @@ KEEPALIVE_TIMEOUT = 30
 LIST_APPLIANCES_FREQUENCY = 600
 API_HOST = API_URL[8:]  # Drop the https://
 
+#basic logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)-15s %(levelname)-8s %(message)s')
+log = logging.getLogger(__name__)
+
 class GeWSClient(MQTTMixin, GeWebsocketClient):
 
     __version__ = __version__
@@ -359,6 +363,9 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         
 def setup_logger(logger_name, log_file, level=logging.DEBUG, console=False):
     try:
+        #clear existing handlers
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
         if logger_name:
             l = logging.getLogger(logger_name)
         else:
@@ -409,17 +416,14 @@ def parse_args():
     return parser.parse_args()
     
 async def main():
-    global log, client
     arg = parse_args()
     if arg.debug:
         log_level = logging.DEBUG
     else:
         log_level = logging.INFO
-    #logging.basicConfig(level=logging.DEBUG, format='%(asctime)-15s %(levelname)-8s %(message)s')
-    
+
     #setup logging
     setup_logger(None, arg.log, level=log_level,console=True)
-    log = logging.getLogger(__name__)
 
     client = GeWSClient(arg.login,
                         arg.password,
@@ -446,5 +450,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         log.info("System exit Received - Exiting program")
-        #asyncio.run(client.stop())
     log.info('Program Exited')
