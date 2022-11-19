@@ -136,11 +136,18 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         '''
         await self._set_user_control_bit(appliance, ErdCode.DISHWASHER_USER_SETTING, 6, self._str2int(on))
         
-    async def set_sound(self, appliance, on):
+    async def set_mute(self, appliance, on):
         '''
         bit 23
         '''
         await self._set_user_control_bit(appliance, ErdCode.DISHWASHER_USER_SETTING, 23, self._str2int(on))
+        
+    async def set_rinse_aid(self, appliance, on):
+        '''
+        Enable/disable rinse aid use
+        bit 15
+        '''
+        await self._set_user_control_bit(appliance, ErdCode.DISHWASHER_USER_SETTING, 15, self._str2int(on))
         
     async def set_bottle_jet(self, appliance, on):
         '''
@@ -218,7 +225,7 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         '''
         Set delay start in minutes (max 12 hours)
         '''
-        await appliance.async_set_erd_value(ErdCode.DISHWASHER_DELAY_START_MINUTES, value)
+        await appliance.async_set_erd_value(ErdCode.DISHWASHER_DELAY_START_MINUTES, timedelta(minutes=value))
         
     async def set_dishwasher_cycle(self, appliance, value):
         '''
@@ -327,6 +334,8 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
                 msg_str = msg
             if hasattr(msg, "value"):
                 msg_val = msg.value
+            if isinstance(msg, timedelta):
+                msg_val = int(msg.total_seconds() // 60)
                    
         topic = str(topic).split('.')[-1]
         topic = '{}/{}'.format(appliance.mac_addr, topic) if appliance else topic
