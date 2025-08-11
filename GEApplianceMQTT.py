@@ -5,6 +5,7 @@ Websocket client for GE appliances
 
 This is intended for a dishwasher (Cafe model CDT875P2N7S1), but can be used for any appliance
 N Waterton 13/11/2022 V 1.0.0 : Initial Release
+N.Waterton 11/8/2025 V 1.1.0 : Updated with new MQTTMixin, added signals
 """
 
 import aiohttp
@@ -14,7 +15,8 @@ from logging.handlers import RotatingFileHandler
 import sys
 from datetime import timedelta
 from typing import * #Any, Dict, Tuple
-from mqtt import MQTTMixin
+from signal import SIGTERM, SIGINT
+from MQTTMixin import MQTTMixin
 
 from gehomesdk import (
     EVENT_ADD_APPLIANCE,
@@ -26,6 +28,7 @@ from gehomesdk import (
     ErdCode,
     ErdCodeType,
     ErdUserSetting,
+    ErdInterfaceLocked,
     UserCycleSetting,
     UserWashTempSetting,
     UserDryOptionSetting,
@@ -35,7 +38,7 @@ from gehomesdk import (
 
 from gehomesdk.clients.const import API_URL
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 KEEPALIVE_TIMEOUT = 30
 LIST_APPLIANCES_FREQUENCY = 600
 API_HOST = API_URL[8:]  # Drop the https://
@@ -52,6 +55,7 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         super().__init__(*args, **kwargs)
         self.log = logging.getLogger(__class__.__name__)
         self.log.info(f'{__class__.__name__} library v{__class__.__version__}')
+        self.add_signals()
         self.invalid_commands.extend([  'publish', 
                                         'async_do_full_login_flow',
                                         'async_do_refresh_login_flow',
@@ -76,20 +80,32 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         self.add_event_handler(EVENT_APPLIANCE_UNAVAILABLE, self._publish_status)
         
     async def start(self):
-        session = aiohttp.ClientSession()
-        await self.async_get_credentials(session)
+        async with aiohttp.ClientSession() as session:
+            await self.async_get_credentials(session)
         await self.async_run_client()
         
     async def stop(self):
-        await self._stop()
         await self.disconnect()
+        
+    def add_signals(self):
+        '''
+        setup signals to exit program
+        '''
+        try:    #might not work on windows
+            def quit():
+                self.log.info('received SIGINT/SIGTEM, exiting')
+                asyncio.create_task(self.stop())
+            asyncio.get_running_loop().add_signal_handler(SIGINT, quit)
+            asyncio.get_running_loop().add_signal_handler(SIGTERM, quit)
+        except Exception:
+            self._log.warning('signal error')
         
     def _get_command(self, msg):
         '''
         override MQTTMixin
         get device and insert into args
         '''
-        device = msg.topic.split('/')[-2]
+        device = str(msg.topic).split('/')[-2]
         if device in self.appliances.keys():
             command, args = super()._get_command(msg)
             if args is None:
@@ -283,11 +299,21 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         
     async def set_dishwasher_sabbath(self, appliance, value):
         '''
-        Set Dishwasher bottle jets
+        Set Dishwasher sabbath mode
         0 = off
         1 = on
         '''
         await appliance.async_set_erd_value(ErdCode.SABBATH_MODE, bool(self._str2int(value)))
+        
+    async def set_dishwasher_ui_locked(self, appliance, value):
+        '''
+        Set Dishwasher UI locked
+        0 = default
+        1 = locked
+        2 = unlocked
+        '''
+        #await appliance.async_set_erd_value(ErdCode.USER_INTERFACE_LOCKED, ErdInterfaceLocked(value))
+        await appliance.async_set_erd_value(ErdCode.USER_INTERFACE_LOCKED, value)
         
     async def send_dishwasher_command(self, appliance, cmd):
         '''
@@ -339,9 +365,9 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
                    
         topic = str(topic).split('.')[-1]
         topic = '{}/{}'.format(appliance.mac_addr, topic) if appliance else topic
-        self._publish(topic, msg_str)
+        self._sync_publish(topic, msg_str)
         if msg_val is not None:
-            self._publish(topic+'_VAL', msg_val)
+            self._sync_publish(topic+'_VAL', msg_val)
         
     async def _publish_state_change(self, data: Tuple[GeAppliance, Dict[ErdCodeType, Any]]):
         """Publish changes in appliance state"""
@@ -453,6 +479,7 @@ async def main():
                         )
 
     await client.start()
+    log.info('exiting')
 
 if __name__ == "__main__":
     try:
