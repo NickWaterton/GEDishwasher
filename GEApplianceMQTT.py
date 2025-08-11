@@ -86,6 +86,7 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         
     async def stop(self):
         self.log.info('received SIGINT/SIGTEM, exiting')
+        await self._mqtt_stop()
         await self.disconnect()
         
     def add_signals(self):
@@ -365,9 +366,9 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
                    
         topic = str(topic).split('.')[-1]
         topic = '{}/{}'.format(appliance.mac_addr, topic) if appliance else topic
-        self._sync_publish(topic, msg_str)
+        self._publish(topic, msg_str)
         if msg_val is not None:
-            self._sync_publish(topic+'_VAL', msg_val)
+            self._publish(topic+'_VAL', msg_val)
         
     async def _publish_state_change(self, data: Tuple[GeAppliance, Dict[ErdCodeType, Any]]):
         """Publish changes in appliance state"""
