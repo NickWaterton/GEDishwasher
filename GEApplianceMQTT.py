@@ -85,6 +85,7 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         await self.async_run_client()
         
     async def stop(self):
+        self.log.info('received SIGINT/SIGTEM, exiting')
         await self.disconnect()
         
     def add_signals(self):
@@ -93,7 +94,6 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         '''
         try:    #might not work on windows
             def quit():
-                self.log.info('received SIGINT/SIGTEM, exiting')
                 asyncio.create_task(self.stop())
             asyncio.get_running_loop().add_signal_handler(SIGINT, quit)
             asyncio.get_running_loop().add_signal_handler(SIGTERM, quit)

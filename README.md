@@ -3,6 +3,8 @@ MQTT Interface for GEDishwasher
 
 uses python module from https://github.com/simbaja/gehome
 
+requires MQTTMixin (pip install https://github.com/NickWaterton/MQTTMixin.git)
+
 ## usage
 ```
 nick@MQTT-Servers-Host:~/Scripts/GEDishwasher$ ./GEApplianceMQTT.py -h
