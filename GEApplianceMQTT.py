@@ -15,7 +15,7 @@ from logging.handlers import RotatingFileHandler
 import sys
 from datetime import timedelta
 from typing import * #Any, Dict, Tuple
-from signal import SIGTERM, SIGINT
+import signal
 from MQTTMixin import MQTTMixin
 
 from gehomesdk import (
@@ -55,7 +55,7 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         super().__init__(*args, **kwargs)
         self.log = logging.getLogger(__class__.__name__)
         self.log.info(f'{__class__.__name__} library v{__class__.__version__}')
-        self.add_signals()
+        self._add_signals()
         self.invalid_commands.extend([  'publish', 
                                         'async_do_full_login_flow',
                                         'async_do_refresh_login_flow',
@@ -89,7 +89,20 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         await self._mqtt_stop()
         await self.disconnect()
         
-    def add_signals(self):
+    def _add_signals(self):
+        '''
+        setup signals to exit program
+        '''
+        try:
+            def quit():
+                asyncio.create_task(self.stop())
+            for sig in ['SIGINT', 'SIGTERM']:
+                if hasattr(signal, sig):
+                    asyncio.get_running_loop().add_signal_handler(getattr(signal, sig), quit)
+        except Exception as e:
+            self.log.warning('signal error {}'.format(e))
+        
+    def add_signals_old(self):
         '''
         setup signals to exit program
         '''
@@ -397,32 +410,21 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
             self.log.info(f'Requesting update for {appliance:s}')
             await appliance.async_request_update()
         
-def setup_logger(logger_name, log_file, level=logging.DEBUG, console=False):
+def setup_logger(log_file, log_level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'):
     try:
-        #clear existing handlers
-        for handler in logging.root.handlers[:]:
-            logging.root.removeHandler(handler)
-        if logger_name:
-            l = logging.getLogger(logger_name)
-        else:
-            l = logging.getLogger()
-        formatter = logging.Formatter('[%(asctime)s][%(levelname)5.5s](%(name)-20s) %(message)s')
-        if log_file is not None:
-            fileHandler = logging.handlers.RotatingFileHandler(log_file, mode='a', maxBytes=10000000, backupCount=10)
-            fileHandler.setFormatter(formatter)
-        if console == True:
-            #formatter = logging.Formatter('[%(levelname)1.1s %(name)-20s] %(message)s')
-            streamHandler = logging.StreamHandler()
-            streamHandler.setFormatter(formatter)
-
-        l.setLevel(level)
-        if log_file is not None:
-            l.addHandler(fileHandler)
-        if console == True:
-          l.addHandler(streamHandler)
+        # Change root logger level from WARNING (default) to our desired level
+        logging.getLogger('').setLevel(log_level)
+        logging.basicConfig(format=format, level=log_level, force=True)
+        if log_file:
+            # Add file rotating handler, with level
+            rotatingHandler = logging.handlers.RotatingFileHandler(filename=log_file, maxBytes=1000, backupCount=5)
+            rotatingHandler.setLevel(log_level)
+            formatter = logging.Formatter(format)
+            rotatingHandler.setFormatter(formatter)
+            logging.getLogger('').addHandler(rotatingHandler)
              
     except Exception as e:
-        print("Error in Logging setup: {} - do you have permission to write the log file??".format(e))
+        print("Error in Logging setup: %s - do you have permission to write the log file??" % e)
         sys.exit(1)
         
 def parse_args():
@@ -452,31 +454,37 @@ def parse_args():
     return parser.parse_args()
     
 async def main():
-    arg = parse_args()
-    if arg.debug:
-        log_level = logging.DEBUG
-    else:
-        log_level = logging.INFO
+    args = parse_args()
+    setup_logger(args.log,
+                 logging.DEBUG if args.debug else logging.INFO,
+                 '%(asctime)s %(levelname)5.5s %(module)-10s %(funcName)-20s %(message)s')
+                 
+    log = logging.getLogger('Main')
+    
+    log.info("*******************")
+    log.info("* Program Started *")
+    log.info("*******************")
+    
+    log.debug('Debug Mode')
+    log.info("{} Version: {}".format(sys.argv[0], __version__))
+    log.info("Python Version: {}".format(sys.version.replace('\n','')))
 
-    #setup logging
-    setup_logger(None, arg.log, level=log_level,console=True)
-
-    client = GeWSClient(arg.login,
-                        arg.password,
-                        region=arg.region,
-                        event_loop=None,
-                        keepalive=KEEPALIVE_TIMEOUT,
-                        list_frequency=LIST_APPLIANCES_FREQUENCY,
-                        ip=arg.broker,
-                        port=arg.mqtt_port,
-                        user=arg.user,
-                        mqtt_password=arg.mqttpassword,
-                        pubtopic=arg.pubtopic,
-                        topic=arg.topic,
-                        name=arg.name,
-                        poll=(arg.poll_interval, arg.poll_methods),
-                        json_out=arg.json_out,
-                        log=None
+    client = GeWSClient(args.login,
+                        args.password,
+                        region          = args.region,
+                        event_loop      = None,
+                        keepalive       = KEEPALIVE_TIMEOUT,
+                        list_frequency  = LIST_APPLIANCES_FREQUENCY,
+                        ip              = args.broker,
+                        port            = args.mqtt_port,
+                        user            = args.user,
+                        mqtt_password   = args.mqttpassword,
+                        pubtopic        = args.pubtopic,
+                        topic           = args.topic,
+                        name            = args.name,
+                        poll            = (args.poll_interval, args.poll_methods),
+                        json_out        = args.json_out,
+                        log             = None
                         )
 
     await client.start()
