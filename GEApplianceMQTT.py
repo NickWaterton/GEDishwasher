@@ -102,18 +102,6 @@ class GeWSClient(MQTTMixin, GeWebsocketClient):
         except Exception as e:
             self.log.warning('signal error {}'.format(e))
         
-    def add_signals_old(self):
-        '''
-        setup signals to exit program
-        '''
-        try:    #might not work on windows
-            def quit():
-                asyncio.create_task(self.stop())
-            asyncio.get_running_loop().add_signal_handler(SIGINT, quit)
-            asyncio.get_running_loop().add_signal_handler(SIGTERM, quit)
-        except Exception:
-            self._log.warning('signal error')
-        
     def _get_command(self, msg):
         '''
         override MQTTMixin
@@ -494,5 +482,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        log.info("System exit Received - Exiting program")
-    log.info('Program Exited')
+        logging.info("System exit Received - Exiting program")
+    logging.info('Program Exited')
